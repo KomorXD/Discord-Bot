@@ -2,7 +2,7 @@ const Config = require('./cfg.json');
 const Music  = require('./music.js');
 
 exports.HandleMessage = (msg) => {
-    let prefix     = Config.prefix;
+    let prefix = Config.prefix;
 
     if(msg.content === `${prefix}help`)
         PrintHelp(msg, prefix);
