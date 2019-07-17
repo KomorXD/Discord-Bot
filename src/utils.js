@@ -1,5 +1,6 @@
 const Config = require('./cfg.json');
 const Music  = require('./music.js');
+const Ranks  = require('./rankings.js');
 
 exports.HandleMessage = (msg) => {
     let prefix = Config.prefix;
@@ -33,6 +34,12 @@ exports.HandleMessage = (msg) => {
 
     else if(msg.content === `${prefix}resume`)
         Music.Resume(msg);
+
+    else if(msg.content === `${prefix}msgs`)
+        Ranks.ShowRankingsByMessages(msg);
+    
+    else
+        Ranks.IncrementCountFor(msg);
 }
 
 exports.FormatTime = (seconds, ms = false) => {
