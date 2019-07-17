@@ -1,0 +1,6 @@
+{
+	"prefix": "^",
+	"token": "<Bot OAuth token>",
+	"yt_token": "<YouTube API token>",
+	"admin_id": "<Bot's admin discord ID>"
+}
