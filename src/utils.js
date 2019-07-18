@@ -1,6 +1,5 @@
 const Config = require('./cfg.json');
 const Music  = require('./music.js');
-const Ranks  = require('./rankings.js');
 
 exports.HandleMessage = (msg) => {
     let prefix = Config.prefix;
@@ -38,8 +37,14 @@ exports.HandleMessage = (msg) => {
     else if(msg.content === `${prefix}msgs`)
         Ranks.ShowRankingsByMessages(msg);
     
-    else
-        Ranks.IncrementCountFor(msg);
+    else if(msg.content.toLowerCase().includes('nigger'))
+        msg.channel.send(':cmonbruh:');
+
+    else if(msg.content.toLowerCase().includes('ayaya'))
+        msg.channel.send(':AYAYA:');
+    
+    else if(msg.content.toLowerCase().includes('jd'))
+        msg.channel.send('JD');
 }
 
 exports.FormatTime = (seconds, ms = false) => {
