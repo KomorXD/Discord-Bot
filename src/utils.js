@@ -45,6 +45,9 @@ exports.HandleMessage = (msg) => {
     
     else if(msg.content.toLowerCase().includes('jd'))
         msg.channel.send('JD');
+    
+    else if(msg.content.toLowerCase() === 'sex')
+        msg.channel.send('https://media.discordapp.net/attachments/225626149223399426/600714134128033794/received_478557409381515.gif');
 }
 
 exports.FormatTime = (seconds, ms = false) => {
