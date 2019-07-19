@@ -33,21 +33,11 @@ exports.HandleMessage = (msg) => {
 
     else if(msg.content === `${prefix}resume`)
         Music.Resume(msg);
-
-    else if(msg.content === `${prefix}msgs`)
-        Ranks.ShowRankingsByMessages(msg);
     
-    else if(msg.content.toLowerCase().includes('nigger'))
-        msg.channel.send(':cmonbruh:');
-
-    else if(msg.content.toLowerCase().includes('ayaya'))
-        msg.channel.send(':AYAYA:');
-    
-    else if(msg.content.toLowerCase().includes('jd'))
-        msg.channel.send('JD');
-    
-    else if(msg.content.toLowerCase() === 'sex')
-        msg.channel.send('https://media.discordapp.net/attachments/225626149223399426/600714134128033794/received_478557409381515.gif');
+    else if(msg.content === `${prefix}sex`)
+        msg.channel.send('', {
+        	file: 'sex.gif'
+        });
 }
 
 exports.FormatTime = (seconds, ms = false) => {
