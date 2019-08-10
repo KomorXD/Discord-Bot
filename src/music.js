@@ -1,246 +1,282 @@
-const ytdl   = require('ytdl-core');
-const yt     = require('youtube-search');
-const Config = require('./cfg.json');
-const Utils  = require('./utils.js');
+const ytdl = require('ytdl-core');
+const YT   = require('youtube-search');
+const Cfg  = require('./cfg.json');
+const Time = require('./time');
 
+// Songs queue, one for every server (guild.id => serverQueue)
 const queue = new Map();
 
-exports.PlaySong = async(msg) => {
-    const args = msg.content.split(' ');
-    const voiceChannel = msg.member.voiceChannel;
-    const srvQueue = queue.get(msg.guild.id);
+// Adds song to the queue and plays it, if the queue is empty
+exports.AddSong = async (message) => {
+    const args         = message.content.split(' ');
+    const voiceChannel = message.member.voiceChannel;
+    const serverQueue  = queue.get(message.guild.id);
 
+    // Check if the arguments were provided
+    if(args.length < 2)
+        return message.channel.send('Not enough arguments were provided');
+
+    // Check if the user is on a voice channel
     if(!voiceChannel)
-        return msg.channel.send('Trzeba być na kanale jakimś');
-    
-    const perms = voiceChannel.permissionsFor(msg.client.user);
+        return message.channel.send('You must be present on a voice channel!');
 
+    const perms = voiceChannel.permissionsFor(message.client.user);
+
+    // Check if the bot has required permissions
     if(!perms.has('CONNECT') || !perms.has('SPEAK'))
-        return msg.channel.send('Nie mam uprawnień, żeby wejść / mówić =(');
+        return message.channel.send('I have no permissions to play a song (CONNECT and/or SPEAK)');
 
+    // Check if the argument is whether a YouTube link, or keywords
     if(args[1].includes('https://youtube.com') || args[1].includes('https://www.youtube.com') || args[1].includes('http://youtube.com') || args[1].includes('http://www.youtube.com') || args[1].includes('http://youtu.be') || args[1].includes('http://www.youtu.be') || args[1].includes('https://youtu.be') || args[1].includes('https://www.youtu.be')) {
-
-        msg.channel.send(`:mag_right: **Szukam:** \`${args[1]}\``);
-        AddFromURL(args[1], srvQueue, msg);
+        message.channel.send(`:mag_right: **Searching:** \`${args[1]}\``);
+        AddSongUsingURL(args[1], serverQueue, message);
     }
     else {
-        msg.content = msg.content.substr(msg.content.indexOf(' ') + 1);
-        msg.channel.send(`:mag_right: **Szukam:** \`${msg.content}\``);
-        AddFromQuery(msg.content, srvQueue, msg);
+        let keywords = message.content.substr(message.content.indexOf(' ') + 1);
+
+        message.channel.send(`:mag_right: **Searching:** \`${keywords}\``);
+        AddSongUsingKeywords(keywords, serverQueue, message);
     }
 }
 
-exports.Stop = (msg) => {
-    const srvQueue = queue.get(msg.guild.id);
+// Stop the music bot
+exports.Stop = (message) => {
+    const serverQueue = queue.get(message.guild.id);
 
-    if(!msg.member.voiceChannel)
-        return msg.channel.send('Musisz być na jakimś kanale');
+    // Check if the user is present on a voice channel
+    if(!message.member.voiceChannel)
+        return message.channel.send('You must be present on a voice channel!');
 
-    if(!srvQueue)
-        return msg.channel.send('Nie ma czego stopować');
+    // Check if the server queue is empty
+    if(!serverQueue)
+        return message.channel.send('There is no song to stop!');
 
-    srvQueue.songs = [];
-    srvQueue.connection.dispatcher.end();
-
-    msg.channel.send(':angry: nara');
+    // Clear the server queue and leave a voice channel
+    serverQueue.songs = [];
+    serverQueue.connection.dispatcher.end();
+    message.channel.send(':angry: cya');
 }
 
-exports.Skip = (msg) => {
-    const srvQueue = queue.get(msg.guild.id);
-    if(!msg.member.voiceChannel)
-        return msg.channel.send('Musisz być na jakimś kanale');
-    
-    if(!srvQueue)
-        return msg.channel.send('Nie ma czego skipować')
-    
-    srvQueue.connection.dispatcher.end();
-    msg.channel.send(':thumbup: Skipnięto');
+// Skip a song
+exports.SkipSong = (message) => {
+    const serverQueue = queue.get(message.guild.id);
+
+    // Check if the user is present on a voice channel
+    if(!message.member.voiceChannel)
+        return message.channel.send('You must be present on a voice channel!');
+
+    // Check if the server queue is empty
+    if(!serverQueue)
+        return message.channel.send('There is no song to skip!');
+
+    // End the current song, so the next one is played
+    serverQueue.connection.dispatcher.end();
+    message.channel.send(':thumbsup: Skipped');
 }
 
-exports.Queue = (msg) => {
-    const srvQueue = queue.get(msg.guild.id);
+// Print songs queue
+exports.PrintQueue = (message) => {
+    const serverQueue = queue.get(message.guild.id);
 
-    if(!srvQueue || srvQueue.songs.length === 0)
-        return msg.channel.send('Kolejka jest pusta!');
-    
-    let response = `**Teraz grają: **\`${srvQueue.songs[0].title} [${Utils.FormatTime(srvQueue.songs[0].seconds)}] | przez: ${srvQueue.songs[0].requestedBy}\`\n\n`;
-    let totalTime = parseInt(srvQueue.songs[0].seconds);
+    // Check if the sevrer queue is empty
+    if(!serverQueue || serverQueue.songs.length === 0)
+        return message.channel.send('The queue is empty');
 
-    if(srvQueue.songs.length > 1) {
-        response += ':arrow_down: NASTĘPNE :arrow_down:\n';
+    let firstSong = serverQueue.songs[0];
+    let response = `**Now playing:** \`${firstSong.title} [${Time.FormatTimeInSeconds(firstSong.seconds)}] | requested by: ${firstSong.requestedBy}\`\n\n`;
+    let totalTime = parseInt(firstSong.seconds);
 
-        for(let i = 1; i < srvQueue.songs.length; i++) {
-            response += `**${i}. **\`${srvQueue.songs[i].title} [${Utils.FormatTime(srvQueue.songs[i].seconds)}] | przez: ${srvQueue.songs[i].requestedBy}\`\n`;
-            totalTime += parseInt(srvQueue.songs[i].seconds);
-        }
-
-        response += `\n**Długość kolejki: **\`${Utils.FormatTime(totalTime)}\``;
-
-        return msg.channel.send(response);
+    // Loop through every song
+    for(let i = 1; i < serverQueue.songs.length; i++) {
+        response += `**${i}. **\`${serverQueue.songs[i].title} [${Time.FormatTimeInSeconds(serverQueue.songs[i].seconds)}] | requested by: ${serverQueue.songs[i].requestedBy}\`\n`;
+        totalTime += parseInt(serverQueue.songs[i].seconds);
     }
+
+    response += `\n**Total length:** \`${Time.FormatTimeInSeconds(totalTime)}\``;
+
+    return message.channel.send(response);
 }
 
-exports.Remove = (msg) => {
-    const srvQueue = queue.get(msg.guild.id);
+// Remove a song from queue
+exports.RemoveSong = (message) => {
+    const serverQueue = queue.get(message.guild.id);
 
-    if(!msg.member.voiceChannel)
-        return msg.channel.send('Wejdź na kanał ; )))))');
-    
-    if(!srvQueue)
-        return msg.channel.send('Nie ma co usuwać');
-    
-    let tokens = msg.content.split(' ');
+    // Check if the user is present on a voice channel
+    if(!message.member.voiceChannel)
+        return message.channel.send('You must be present on a voice channel!');
 
+    // Check if the server queue is empty
+    if(!serverQueue)
+        return message.channel.send('The queue is empty');
+
+    let tokens = message.content.split(' ');
+
+    // Check if enough arguments were provided
     if(tokens.length < 2)
-        return msg.channel.send('Daj numerek');
-    
+        return message.channel.send('Not enough arguments were provided');
+
     let index = tokens[1];
 
     if(index === -1) {
-        msg.channel.send(`:thumbup: **Usunięto: **\`${srvQueue.songs[srvQueue.songs.length - 1].title}\``);
-        srvQueue.songs.splice(srvQueue.songs.length - 1, 1);
+        message.channel.send(`:thumbsup: **Removed:** \`${serverQueue.songs[serverQueue.songs.length - 1].title}\``);
+        serverQueue.songs.splice(serverQueue.songs.length - 1, 1);
     }
-    else if(index < srvQueue.songs.length && index > 0) {
-        msg.channel.send(`:thumbup: **Usunięto: **\`${srvQueue.songs[index].title}\``);
-        srvQueue.songs.splice(index, 1);
+    else if(index < serverQueue.songs.length && index > 0) {
+        message.channel.send(`:thumbsup: **Removed:** \`${serverQueue.songs[index].title}\``);
+        serverQueue.songs.splice(index, 1);
     }
 }
 
-exports.Move = (msg) => {
-    const srvQueue = queue.get(msg.guild.id);
+// Move a song
+exports.MoveSong = (message) => {
+    const serverQueue = queue.get(message.guild.id);
 
-    if(!msg.member.voiceChannel)
-        return msg.channel.send('Wejdź na kanał ; )))))');
-    
-    if(!srvQueue)
-        return msg.channel.send('Nie ma co ruszać');
+    // Check if the user is present on a voice channel
+    if(!message.member.voiceChannel)
+        return message.channel.send('You must be present on a voice channel!');
 
-    let tokens = msg.content.split(' ');
+    // Check if the server queue is empty
+    if(!serverQueue)
+        return message.channel.send('The queue is empty');
 
+    let tokens = message.content.split(' ');
+
+    // Check if enough arguments were provided
     if(tokens.length < 3)
-        return msg.channel.send('Za mało agrumentów');
+        return message.channel.send('Not enough arguments were provided');
 
     let oldPos = tokens[1];
     let newPos = tokens[2];
 
+    // Check if the arguments are valid
     if(oldPos <= 0 || newPos <= 0)
-        return msg.channel.send('Pozycje są dodatnie');
-    if(oldPos > srvQueue.songs.length || newPos > srvQueue.songs.length - 1)
-        return msg.channel.send(`Max. pozycja: ${srvQueue.songs.length - 1}`);
+        return message.channel.send('No such positions');
+    if(oldPos > serverQueue.songs.length || newPos > serverQueue.songs.length - 1)
+        return message.channel.send('No such positions');
 
-    msg.channel.send(`:thumbup: **Przeniesiono: **\`${srvQueue.songs[oldPos].title}\` z pozycji \`${oldPos}\` na \`${newPos}\``);
-    srvQueue.songs.splice(newPos, 0, srvQueue.songs.splice(oldPos, 1)[0]);
+    message.channel.send(`:thumbup: **Moved:** \`${serverQueue.songs[oldPos].title}\` from \`${oldPos}\` to \`${newPos}\``);
+    serverQueue.songs.splice(newPos, 0, serverQueue.songs.splice(oldPos, 1)[0]);
 }
 
-exports.NowPlaying = (msg) => {
-    const srvQueue = queue.get(msg.guild.id);
+// Print current song info
+exports.PrintCurrentSongInfo = (message) => {
+    const serverQueue = queue.get(message.guild.id);
 
-    if(!msg.member.voiceChannel)
-        return msg.channel.send('Wejdź na kanał ; )))))');
-    
-    if(!srvQueue)
-        return msg.channel.send('Nic nie grają');
+    // Check if the user is present on a voice channel
+    if(!message.member.voiceChannel)
+        return message.channel.send('You must be present on a voice channel!');
 
-    msg.channel.send(`**Teraz grają: **\`${srvQueue.songs[0].title} [${Utils.FormatTime(srvQueue.connection.dispatcher.time, true)} / ${Utils.FormatTime(srvQueue.songs[0].seconds)}] | przez: ${srvQueue.songs[0].requestedBy}\`\n\n`);
+    // Check if the server queue is empty
+    if(!serverQueue)
+        return message.channel.send('Nothing is being played right now');
+
+    message.channel.send(`**Now playing:** \`${serverQueue.songs[0].title} [${Time.FormatTimeInMs(serverQueue.connection.dispatcher.time)} / ${Time.FormatTimeInSeconds(serverQueue.songs[0].seconds)}] | requested by: ${serverQueue.songs[0].requestedBy}\`\n\n`);
 }
 
-exports.Pause = (msg) => {
-    const srvQueue = queue.get(msg.guild.id);
+// Pause current song
+exports.PauseSong = (message) => {
+    const serverQueue = queue.get(message.guild.id);
 
-    if(!msg.member.voiceChannel)
-        return msg.channel.send('Wejdź na kanał ; )))))');
-    
-    if(!srvQueue)
-        return msg.channel.send('Nic nie grają');
+    // Check if the user is present on a voice channel
+    if(!message.member.voiceChannel)
+        return message.channel.send('You must be present on a voice channel!');
 
-    srvQueue.connection.dispatcher.pause();
-    msg.channel.send(':thumbup: Zatrzymano');
+    // Check if the server queue is empty
+    if(!serverQueue)
+        return message.channel.send('Nothing is being played right now');
+
+    serverQueue.connection.dispatcher.pause();
+    message.channel.send(':thumbsup: Paused');
 }
 
+// Resume current song
+exports.ResumeSong = (message) => {
+    const serverQueue = queue.get(message.guild.id);
 
-exports.Resume = (msg) => {
-    const srvQueue = queue.get(msg.guild.id);
+    // Check if the user is present on a voice channel
+    if(!message.member.voiceChannel)
+        return message.channel.send('You must be present on a voice channel!');
 
-    if(!msg.member.voiceChannel)
-        return msg.channel.send('Wejdź na kanał ; )))))');
-    
-    if(!srvQueue)
-        return msg.channel.send('Nic nie grają');
+    // Check if the server queue is empty
+    if(!serverQueue)
+        return message.channel.send('Nothing is being played right now');
 
-    srvQueue.connection.dispatcher.resume();
-    msg.channel.send(':thumbup: Wznowiono');
+    serverQueue.connection.dispatcher.resume();
+    message.channel.send(':thumbsup: Resumed');
 }
 
-const Play = (guild, song) => {
-    const srvQueue = queue.get(guild.id);
+// Play a song
+const PlaySong = (guild, song) => {
+    const serverQueue = queue.get(guild.id);
 
+    // Check if the queue has just ran out of songs (after the last song was shifted, songs[0] is null)
     if(!song) {
-        srvQueue.voiceChannel.leave();
+        serverQueue.voiceChannel.leave();
         queue.delete(guild.id);
 
         return;
     }
 
-    const dispatcher = srvQueue.connection.playStream(ytdl(song.url)).on('end', () => {
-        srvQueue.songs.shift();
+    // Set dispatcher, play a song, skip to the next on end, look for errors
+    const dispatcher = serverQueue.connection.playStream(ytdl(song.url)).on('end', () => {
+        // Play the next song, if the current has finished
+        serverQueue.songs.shift();
 
-        Play(guild, srvQueue.songs[0]);
+        PlaySong(guild, serverQueue.songs[0]);
     }).on('error', (err) => {
-        console.error(err);
+        console.log(err);
     });
 
-    dispatcher.setVolumeLogarithmic(srvQueue.volume / 5);
+    dispatcher.setVolumeLogarithmic(serverQueue.volume / 5);
 }
 
-const AddFromURL = async(url, srvQueue, msg) => {
+// Add a song using URL
+const AddSongUsingURL = async (url, serverQueue, message) => {
     const songInfo = await ytdl.getInfo(url);
     let song = {
         title: songInfo.title,
         url: url,
         seconds: songInfo.player_response.videoDetails.lengthSeconds,
-        requestedBy: msg.author.username
+        requestedBy: message.author.username
     };
 
-    if(!srvQueue) {
+    // If the server queue is empty, create it
+    if(!serverQueue) {
         const queueContruct = {
-            textChannel: msg.channel,
-            voiceChannel: msg.member.voiceChannel,
+            textChannel: message.channel,
+            voiceChannel: message.member.voiceChannel,
             connection: null,
             songs: [],
             volume: 5,
             playing: true
-        };
+        }
 
-        queue.set(msg.guild.id, queueContruct);
+        queue.set(message.guild.id, queueContruct);
         queueContruct.songs.push(song);
 
         try {
-            let connection = await msg.member.voiceChannel.join();
+            let connection = await message.member.voiceChannel.join();
 
             queueContruct.connection = connection;
-            Play(msg.guild, queueContruct.songs[0]);
-        }
-        catch(err) {
+            PlaySong(message.guild, queueContruct.songs[0]);
+        } catch(err) {
             console.log(err);
-            queue.delete(msg.guild.id);
-
-            msg.channel.send(err);
+            queue.delete(message.guild.id);
+            message.channel.send(err);
         }
+    } else {
+        serverQueue.songs.push(song);
     }
-    else
-        srvQueue.songs.push(song);
 
-    msg.channel.send(`:notes: **Dodano:** \`${song.title}\``);
+    message.channel.send(`:notes: **Added:** \`${song.title}\``);
 }
 
-const AddFromQuery = (query, srvQueue, msg) => {
-    yt(query, {maxResults: 2, key: Config.yt_token}, (err, res) => {
+// Add a song using keywords
+const AddSongUsingKeywords = (keywords, serverQueue, message) => {
+    YT(keywords, {maxResults: 2, key: Cfg.yt_token}, (err, res) => {
         if(err)
-            msg.channel.send(`Err: ${err}`);
-        else {
-            let videoURL = res[0]['link'];
-
-            AddFromURL(videoURL, srvQueue, msg);
-        }
-    })
+            message.channel.send(`Error: ${err}`);
+        else
+            AddSongUsingURL(res[0]['link'], serverQueue, message);
+    });
 }
